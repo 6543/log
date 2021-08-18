@@ -16,9 +16,6 @@ const (
 	// to zero-value.
 	LevelUndefined = Level(iota)
 
-	// LevelFatal will report about Fatalf-s only.
-	LevelFatal
-
 	// LevelCritical will report about Criticalf-s and Fatalf-s only.
 	LevelCritical
 
@@ -55,8 +52,6 @@ func (logLevel Level) String() string {
 		return "error"
 	case LevelCritical:
 		return "critical"
-	case LevelFatal:
-		return "fatal"
 	}
 	return "unknown"
 }
@@ -66,7 +61,7 @@ func (logLevel Level) String() string {
 func ParseLogLevel(in string) (Level, error) {
 	switch strings.ToLower(in) {
 	case "t", "trace":
-		return LevelDebug, nil
+		return LevelTrace, nil
 	case "d", "debug":
 		return LevelDebug, nil
 	case "i", "info":
@@ -77,11 +72,9 @@ func ParseLogLevel(in string) (Level, error) {
 		return LevelError, nil
 	case "c", "critical":
 		return LevelCritical, nil
-	case "f", "fatal":
-		return LevelFatal, nil
 	}
 	var allowedValues []string
-	for logLevel := LevelFatal; logLevel <= LevelDebug; logLevel++ {
+	for logLevel := LevelCritical; logLevel <= LevelTrace; logLevel++ {
 		allowedValues = append(allowedValues, logLevel.String())
 	}
 	return LevelUndefined, fmt.Errorf("unknown logging level '%s', known values are: %s",
