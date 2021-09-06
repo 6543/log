@@ -293,7 +293,7 @@ And in turn a `Logger` is extendable by these hooks:
 ```go
 type Logger interface {
 	...
-	WithHooks(...Hook)
+	WithHooks(...Hook) Logger
 	Hooks() []Hook
 	...
 }
@@ -347,13 +347,13 @@ type Logger interface {
 	Error(values ...interface{})
 	Panic(values ...interface{})
 
-	WithValue(key string, value interface{})
-	WithFields(fields Fields)
-	WithMap(map[string]interface{})
-	WithStruct(interface{})
+	WithValue(key string, value interface{}) Logger
+	WithFields(fields Fields) Logger
+	WithMap(map[string]interface{}) Logger
+	WithStruct(interface{}) Logger
 	Fields() Fields
 
-	WithHooks(...Hook)
+	WithHooks(...Hook) Logger
 	Hooks() []Hook
 
 	WithLevel(level Level) Logger
@@ -375,10 +375,10 @@ OpenTelemetry does not provide required properties, while `xcontext` is designed
 
 ```go
 type Tool interface {
-	WithValue(key string, value interface{})
-	WithFields(fields Fields)
-	WithMap(map[string]interface{})
-	WithStruct(interface{})
+	WithValue(key string, value interface{}) Logger
+	WithFields(fields Fields) Logger
+	WithMap(map[string]interface{}) Logger
+	WithStruct(interface{}) Logger
 	Fields() Fields
 }
 
