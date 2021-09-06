@@ -214,7 +214,7 @@ And the logger is a thing which is very rarely modified, but used a lot. Thus it
 
 And to make logging level contextual it is required to have setter and getter methods:
 ```go
-WithLevel(level Level)
+WithLevel(level Level) Logger
 Level() Level
 ```
 
@@ -355,6 +355,9 @@ type Logger interface {
 
 	WithHooks(...Hook)
 	Hooks() []Hook
+
+	WithLevel(level Level) Logger
+	Level() Level
 
 	Flush()
 }
