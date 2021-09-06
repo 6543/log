@@ -499,9 +499,9 @@ func (obs *Observer) WithTraceID(traceIDs ...string) *Observer
 
 Each time a new request is generated, a new TraceID is **added**. For example:
 * An end-user sent a request with TraceID `A` to service #1 to create a job.
-* Service #1 received the request and sent requests services #2 and #3. The requests has TraceIDs: `A,B` and `A,C`.
+* Service #1 received the request and sent requests to services #2 and #3. The requests has TraceIDs: `A,B` and `A,C`.
 * Service #3 received the request and sent a request to service #4. The TraceID is `A,C,D`.
-* An end-user send a request with TraceID `E` to service #1 to cancel the job.
+* An end-user sent a request with TraceID `E` to service #1 to cancel the job.
 * Service #1 sent to service #3 a request with TraceID `E,F`.
 * Service #3 sent to service #4 a request with TraceID `E,F,G`.
 * Somewhere in service #4 among other logs there could be logs with TraceID `A,C,D,E,F,G`.
@@ -699,7 +699,7 @@ func (l *Logger) Close() error {
 
 Also if a `Logger` is being used as a singleton then it is possible to just use `sync/atomic` to atomically replace the logger with a dummy logger and flush the old one.
 
-**Does it makes sense to do a generic `Logger` is it by design do not cover all possible use cases? May be it is better to use specific Loggers in each specific case?**
+**Does it makes sense to do a generic `Logger` if it by design do not cover all possible use cases? May be it is better to use specific Loggers in each specific case?**
 
 Generic logger allows different development teams to collaborate. It is similar to interface `io.ReadWriteCloser` which do not cover all possible use cases for IO objects. But it covers the part which is shared among them which makes such objects interchangable.
 
