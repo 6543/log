@@ -653,16 +653,26 @@ func (tools Tools) Get(toolType reflect.Type) Tool {
 // Observer is a collection of observability tools.
 type Observer struct { ... }
 
+// With* returns an Observer derivative which includes the passed values into issued data (logs, metrics etc).
 func (obs *Observer) WithValue(key string, value interface{}, props ...FieldProperty) *Observer { ... }
 func (obs *Observer) WithFields(fields ...Fields) *Observer { ... }
 func (obs *Observer) WithMap(map[string]interface{}, props ...FieldProperty) *Observer { ... }
 func (obs *Observer) WithStruct(interface{}, props ...FieldProperty) *Observer { ... }
-
+// Fields returns returns the set of fields set in the scope of this Observer.
 func (obs *Observer) Fields() Fields { ... }
+
+// WithTools returns an Observer derivative which includes passed Tools to the collection.
+// If some Tool is defined twice, then the latest variant is used.
+//
+// Special case: to reset the collection to the empty set use `WithTools()` (with no arguments).
 func (obs *Observer) WithTools(tools ...Tool) { ... }
+// Tools returns the current collection of Tools.
 func (obs *Observer) Tools() Tools
-func (obs *Observer) TraceIDs() []string
+
+// WithTraceID returns an Observer derivative which includes passed traceIDs to the set of TraceIDs.
 func (obs *Observer) WithTraceID(traceIDs ...string) *Observer
+// TraceIDs returns the current set of TraceID-s.
+func (obs *Observer) TraceIDs() []string
 ```
 
 ```go
@@ -673,9 +683,11 @@ import "context"
 type ctxKey string
 const ctxKeyObserver = ctxKey("observer")
 
+// WithObs returns a context derivative which includes the Observer as a value.
 func WithObs(ctx context.Context, obs *Observer) context.Context {
 	return context.WithValue(ctx, ctxKeyObserver, obs)
 }
+// Obs returns the Observer from context values. Returns the default observer if one is not set in the context.
 func Obs(ctx context.Context) *Observer {
 	observer := ctx.Value(ctxKeyObserver)
 	if obs == nil {
@@ -684,6 +696,7 @@ func Obs(ctx context.Context) *Observer {
 	return observer.(*Observer)
 }
 
+// With* returns a context derivative with an Observer which includes the passed values.
 func WithValue(ctx context.Context, key string, value interface{}) context.Context {
 	obs := ctx.Value(ctxKeyObserver)
 	if obs == nil {
@@ -788,7 +801,7 @@ myLogger := NewMyLogger() // of a concrete type with method `Close`.
 myFunc(myLogger, myLogger.Close) // here it is boxed to an interface without method `Close`
 ```
 
-They can apply type-cast:
+They can apply type-assertion if the logger supports `Close`:
 
 ```go
 myLogger.(io.Closer).Close()
@@ -836,7 +849,7 @@ func mySlowFunc(ctx context.Context) {
 }
 ```
 
-It is also possible to pre-type-cast to make methods a little-bit faster:
+It is also possible to pre-type-assertion to make methods a little-bit faster:
 ```go
 func mySlowFunc(ctx context.Context) {
 	[...]
