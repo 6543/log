@@ -451,10 +451,10 @@ OpenTelemetry does not provide required properties, while `xcontext` is designed
 
 ```go
 type Tool interface {
-	WithValue(key string, value interface{}, props ...ValueProperty) Tool
+	WithValue(key string, value interface{}, props ...FieldProperty) Tool
 	WithFields(fields Fields) Tool
-	WithMap(map[string]interface{}, props ...ValueProperty) Tool
-	WithStruct(interface{}, props ...ValueProperty) Tool
+	WithMap(map[string]interface{}, props ...FieldProperty) Tool
+	WithStruct(interface{}, props ...FieldProperty) Tool
 	Fields() Fields
 }
 
@@ -479,11 +479,11 @@ func (obs *Observer) WithFields(fields ...Fields) *Observer { ... }
 func (obs *Observer) WithMap(map[string]interface{}, props ...FieldProperty) *Observer { ... }
 func (obs *Observer) WithStruct(interface{}, props ...FieldProperty) *Observer { ... }
 func (obs *Observer) Fields() Fields { ... }
-func (obs *Observer) WithTools(tools ...Tool) { ... }
+func (obs *Observer) WithTools(tools ...Tool) *Observer { ... }
 func (obs *Observer) Tools() Tools
 ```
 
-Notice that `With*` methods has optional `props ...FieldProperty`. It is required to address another problem:
+Remark: `With*` methods has optional `props ...FieldProperty`. It is required to address another problem:
 * Sometimes it is required to add a field to one tool, but to do not add it to other tools. For example if there is a random value then it usually should not be placed into metrics, otherwise it will create a cond-infinite amount of end-metrics (and consume all RAM). Thus it is possible to pass optional properties which could be interpreted by `Tool`-s to ignore or not.
 
 An example of usage:
@@ -499,13 +499,16 @@ func main() {
 }
 
 func myFunc(obs *Observer) {
+	obs = obs.WithValue("myTag", "myValue")
 	defer tracer.FromObs(obs).Start("doingSomeStuff").Finish()
 	...
 	logger.FromObs(obs).Debug("yay!")
 	...
+	metrics.FromObs(obs).Count("yay").Add(1)
+	...
 }
 ```
-This will resuls into a log entry with fields `{"pid":1234, "message":"yay!"}`. And it won't panic on `tracer` despite the fact it was not initialized, because `FromObs` is obligated to return a dummy implementation if no `tracer` is defined in the `Observer`.
+This will resuls into a log entry with fields `{"pid":1234, "myTag": "myValue", "message":"yay!"}` and it will increment a metric with key `yay` and tag `{"myTag": "myValue"}`. And it won't panic on `tracer` despite the fact it was not initialized, because `FromObs` is obligated to return a dummy implementation if no `tracer` is defined in the `Observer`.
 
 ### Part 2.2: Observability API: integrating with `context`
 
@@ -665,7 +668,7 @@ func (obs *Observer) Fields() Fields { ... }
 // If some Tool is defined twice, then the latest variant is used.
 //
 // Special case: to reset the collection to the empty set use `WithTools()` (with no arguments).
-func (obs *Observer) WithTools(tools ...Tool) { ... }
+func (obs *Observer) WithTools(tools ...Tool) *Observer { ... }
 // Tools returns the current collection of Tools.
 func (obs *Observer) Tools() Tools
 
