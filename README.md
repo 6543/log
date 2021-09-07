@@ -36,7 +36,7 @@ And all these tooling (logger, metrics, tracing and error monitoring) has the sa
 
 ## Contextuality
 
-There are different implementations of structured logging for Go, but not successful in practice (like zap) allows to define structured fields gradually. For example:
+There are different implementations of structured logging for Go, but the most successful in practice (like zap) allows to define structured fields gradually. For example:
 
 ```go
 func myFunc0(groupID int, zapLogger *zap.Logger) {
@@ -104,7 +104,7 @@ The problem is that SOLID is not followed. The extended context is a light versi
 
 The properties of the logger:
 
-* Dependency injection. The logger should be injectable (instead of a global instance) and abstract.
+* Dependency injection. The logger should be possible to inject (like in dependency injection) and abstract.
 * It should be structured and contextual.
 * It should support logging levels, and they also should be contextual.
 * It should be extendable. It should be possible to attach “hooks“ to modify log entries, or to actually log them (to stdout, file, logstash, whatever).
@@ -115,7 +115,7 @@ It should be possible to gradually extend the context by creating derivatives (w
 * Either the context is a part of the logger itself.
 * Or logger is responsible for logging only, and logging context is a separate entity.
 
-It would be somewhat more SOLID to use the second approach (see "single-responsibility principle"). But in practice it does not change anything except that an user will need to passthrough two entities through the whole call stack instead of one. Thus we propose to use the first approach:
+It would be somewhat more SOLID to use the second approach (see "single-responsibility principle"). But in practice it does not change anything except that an user will need to pass-through two entities through the whole call stack instead of one. Thus we propose to use the first approach:
 
 ```go
 type Fields map[string]interface{}
@@ -129,13 +129,14 @@ type Logger interface {
 }
 ```
 
-The main downside here is that `map[string]interface{}` is too expensive in terms of CPU consumption. For example non-sugared zap has a [`Field` structure](https://github.com/uber-go/zap/blob/c23abee72d197be00f17816e336aca5c72c6f26a/zapcore/field.go#L103-L109) to avoid interface-boxing and allocing maps. And we can re-use the same approach:
+The main downside here is that `map[string]interface{}` is too expensive in terms of CPU consumption. For example non-sugared zap has a [`Field` structure](https://github.com/uber-go/zap/blob/c23abee72d197be00f17816e336aca5c72c6f26a/zapcore/field.go#L103-L109) to avoid interface-boxing and allocating maps. And we can re-use the same approach:
 ```go
 type Field struct {
 	Key       string
 	Integer   int64
 	String    string
 	Bytes     []byte
+	Type      reflect.Type
 	Interface interface{}
 }
 
@@ -220,7 +221,7 @@ Level() Level
 
 ### Part 1.3: Logger interface: logging methods
 
-Historically (since "C") a lot of programmers used to format+arguments API, like:
+Historically (since "C") a lot of programmers used to format+arguments functions, like:
 ```
 Printf(format string, args ...interface{})
 ```
@@ -298,67 +299,133 @@ type Logger interface {
 	...
 }
 ```
-To remove all hooks: `myLogger = myLogger.WithHooks(nil)`.
+To remove all hooks: `myLogger = myLogger.WithHooks()`.
 
 ### Part 1.6: Logger interface: in total
 
 ```go
+// Field is a CPU-effective way to add structured values.
 type Field struct {
-	Key       string
-	Integer   int64
-	String    string
-	Bytes     []byte
+	// Key is the name/key of the value.
+	Key string
+
+	// Integer is the value if it is an integer (int8, uint8, int16, uint16, int32, uint32, int64, uint64).
+	Integer int64
+
+	// String is the value if it is a string or []byte.
+	String string
+
+	// Interface is the value if Integer and/or String cannot be used to store it.
 	Interface interface{}
+
+	// Type is a selector if Integer, String or Interface should be used to get the value.
+	Type reflect.Type
 }
 
+// Fields is a set of Field-s
 type Fields []Field
 
+// Caller is a simplified version of runtime.Frame, which contains only
+// data required in a Logger.
 type Caller struct {
-	Defined bool
-	PC      uintptr
-	File    string
-	Line    int
+	// PC is the program counter, see the description in runtime.Frame.
+	PC uintptr
+
+	// File is the file name or path, see the description in runtime.Frame.
+	File string
+
+	// Line is the code line number, see the description in runtime.Frame.
+	Line uint
 }
 
+// Entry a single log entry to be logged/written.
 type Entry interface {
+	// Timestamp defines the time moment when the entry was issued (for example method `Debugf` was called).
 	Timestamp time.Time
+
+	// Level is the logging level of the entry.
 	Level Level
+
+	// Fields is the set of values to be logged. Field "message" is the default field (and it is used for example to store the final string of `Debugf`).
 	Fields Fields
+
+	// Caller is a minimalistic runtime.Frame.
+	//
+	// If Caller is not set (for example, due to performance reasons) then it should
+	// have the zero-value.
 	Caller Caller
 }
 
+// Hook is a processor for log entries. It may for example modify them or write then into an actual log-storage.
 type Hook interface {
 	Process(*Entry)
+
+	// Flush gracefully empties any buffers the hook may have.
 	Flush()
 }
 
+// Logger defines a generic logger
 type Logger interface {
+	// XXXf creates a log entry with level XXX and field `message` formed as fmt.Sprintf of provided arguments.
 	Tracef(format string, args ...interface{})
 	Debugf(format string, args ...interface{})
 	Infof(format string, args ...interface{})
 	Warnf(format string, args ...interface{})
 	Errorf(format string, args ...interface{})
+
+	// Panicf creates the log entry and triggers `panic`.
 	Panicf(format string, args ...interface{})
 
+	// Fatalf creates the log entry and immediately closes the whole application.
+	Fatalf(format string, args ...interface{})
+
+	// XXX create a log entry with level XXX and fields parses from `values`.
+	//
+	// `values` are parsed in separate:
+	// * If a value has type Field then it is parsed as Field.
+	// * If a value is a struct or a pointer to a struct then it is parsed as a struct. In this case each field of the struct defines a separate value for the log entry. The key of the value equals to the field name or to tag `log` value if it is defined. To skip the field add tag `log:"-"`
+	// * If a value is neither of above then it is appended to field `message` as a string.
+	//
+	// If no values is provided then the log entry is issued without adding additional fields. Thus these are equivalents:
+	//     myLogger.WithField("message", "hello world!").Debug()
+	// and
+	//     myLogger.Debug("hello", " world!")
 	Trace(values ...interface{})
 	Debug(values ...interface{})
 	Info(values ...interface{})
 	Warn(values ...interface{})
 	Error(values ...interface{})
+
+	// Panic creates the log entry and triggers `panic`.
 	Panic(values ...interface{})
 
+	// Fatal creates the log entry and immediately closes the whole application.
+	Fatal(values ...interface{})
+
+	// With* returns a Logger derivative which includes passed values to all issued log entries.
 	WithValue(key string, value interface{}) Logger
 	WithFields(fields Fields) Logger
 	WithMap(map[string]interface{}) Logger
 	WithStruct(interface{}) Logger
+
+	// Fields returns the values to be included to issued log entries
 	Fields() Fields
 
+	// WithHooks returns a Logger derivative which also includes/appends hooks from the arguments.
+	//
+	// Special case: to reset hooks use `WithHooks()` (without any arguments).
 	WithHooks(...Hook) Logger
+
+	// Hooks returns current Hooks.
 	Hooks() []Hook
 
+	// WithLevel returns a Logger derivative which has defined logging level.
 	WithLevel(level Level) Logger
+
+	// Level returns current logging level.
 	Level() Level
 
+	// Flush forces to flush all buffers of all Hooks.
 	Flush()
 }
 ```
@@ -504,7 +571,7 @@ Each time a new request is generated, a new TraceID is **added**. For example:
 * An end-user sent a request with TraceID `E` to service #1 to cancel the job.
 * Service #1 sent to service #3 a request with TraceID `E,F`.
 * Service #3 sent to service #4 a request with TraceID `E,F,G`.
-* Somewhere in service #4 among other logs there could be logs with TraceID `A,C,D,E,F,G`.
+* Somewhere in service #4 among other logs there could be logs with TraceID `A,C,D,E,F,G` because they caused by combination of the first and second end-user requests.
 
 In log storage TraceIDs are supposed to be stored as a set of tags.
 
