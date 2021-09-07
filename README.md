@@ -452,7 +452,7 @@ OpenTelemetry does not provide required properties, while `xcontext` is designed
 ```go
 type Tool interface {
 	WithValue(key string, value interface{}, props ...ValueProperty) Tool
-	WithFields(fields Fields, props ...ValueProperty) Tool
+	WithFields(fields Fields) Tool
 	WithMap(map[string]interface{}, props ...ValueProperty) Tool
 	WithStruct(interface{}, props ...ValueProperty) Tool
 	Fields() Fields
