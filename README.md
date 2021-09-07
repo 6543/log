@@ -320,7 +320,16 @@ type Field struct {
 
 	// Type is a selector if Integer, String or Interface should be used to get the value.
 	Type reflect.Type
+
+	// Properties defines Hook-specific options (how to interpret this field).
+	Properties FieldProperties
 }
+
+// FieldProperty defines a Tool-specific option (how to interpret this field).
+type FieldProperty interface{}
+
+// FieldProperties defines Tool-specific options (how to interpret this field).
+type FieldProperties []FieldProperty
 
 // Fields is a set of Field-s
 type Fields []Field
@@ -442,40 +451,40 @@ OpenTelemetry does not provide required properties, while `xcontext` is designed
 
 ```go
 type Tool interface {
-	WithValue(key string, value interface{}) Logger
-	WithFields(fields Fields) Logger
-	WithMap(map[string]interface{}) Logger
-	WithStruct(interface{}) Logger
+	WithValue(key string, value interface{}, props ...ValueProperty) Tool
+	WithFields(fields Fields, props ...ValueProperty) Tool
+	WithMap(map[string]interface{}, props ...ValueProperty) Tool
+	WithStruct(interface{}, props ...ValueProperty) Tool
 	Fields() Fields
 }
 
-type ToolEntry struct {
-	Key ToolKey
-	Tool Tool
-}
+type Tools []Tools
 
-type Tools []ToolEntry
-
-func (tools Tools) Get(key ToolKey) Tool {
+func (tools Tools) Get(toolType reflect.Type) Tool {
 	// linear search is faster than map if there are only few entries
-	for _, toolEntry := range tools {
-		if toolEntry.Key == key {
-			return toolEntry.Tool
+	for _, tool := range tools {
+		// reflect.TypeOf has no overhead when inlined, it just returns the type-field of the interface.
+		// See: https://github.com/xaionaro-go/benchmarks/tree/master/reflect
+		if reflect.TypeOf(tool) == toolType {
+			return tool
 		}
 	}
-	return false
+	return nil
 }
 
 type Observer struct { ... }
 
-func (obs *Observer) WithValue(key string, value interface{}) *Observer { ... }
-func (obs *Observer) WithFields(fields Fields) *Observer { ... }
-func (obs *Observer) WithMap(map[string]interface{}) *Observer { ... }
-func (obs *Observer) WithStruct(interface{}) *Observer { ... }
+func (obs *Observer) WithValue(key string, value interface{}, props ...FieldProperty) *Observer { ... }
+func (obs *Observer) WithFields(fields ...Fields) *Observer { ... }
+func (obs *Observer) WithMap(map[string]interface{}, props ...FieldProperty) *Observer { ... }
+func (obs *Observer) WithStruct(interface{}, props ...FieldProperty) *Observer { ... }
 func (obs *Observer) Fields() Fields { ... }
 func (obs *Observer) WithTools(tools ...Tool) { ... }
 func (obs *Observer) Tools() Tools
 ```
+
+Notice that `With*` methods has optional `props ...FieldProperty`. It is required to address another problem:
+* Sometimes it is required to add a field to one tool, but to do not add it to other tools. For example if there is a random value then it usually should not be placed into metrics, otherwise it will create a cond-infinite amount of end-metrics (and consume all RAM). Thus it is possible to pass optional properties which could be interpreted by `Tool`-s to ignore or not.
 
 An example of usage:
 ```go
@@ -483,7 +492,7 @@ func main() {
 	...
 	obs := obs.NewObserver().WithTools(metrics.New(), logger.New()) // metrics are first, because they should be faster
 	...
-	obs = obs.WithValue("pid", os.Getpid())
+	obs = obs.WithValue("pid", os.Getpid(), metrics.PropIgnore)
 	...
 	myFunc(obs)
 	...
@@ -580,36 +589,75 @@ In log storage TraceIDs are supposed to be stored as a set of tags.
 ```go
 package obs
 
+// Field is a CPU-effective way to add structured values.
+//
+// The same as in Logger (should be type-aliased).
+type Field struct {
+	// Key is the name/key of the value.
+	Key string
+
+	// Integer is the value if it is an integer (int8, uint8, int16, uint16, int32, uint32, int64, uint64).
+	Integer int64
+
+	// String is the value if it is a string or []byte.
+	String string
+
+	// Interface is the value if Integer and/or String cannot be used to store it.
+	Interface interface{}
+
+	// Type is a selector if Integer, String or Interface should be used to get the value.
+	Type reflect.Type
+
+	// Properties defines Hook-specific options (how to interpret this field).
+	Properties FieldProperties
+}
+
+// FieldProperty defines a Tool-specific option (how to interpret this field).
+//
+// The same as in Logger (should be type-aliased).
+type FieldProperty interface{}
+
+// FieldProperties defines Tool-specific options (how to interpret this field).
+//
+// The same as in Logger (should be type-aliased).
+type FieldProperties []FieldProperty
+
+// Tool is an abstract observability tool. It could be a Logger, metrics, tracing or anything else.
 type Tool interface {
-	WithValue(key string, value interface{})
-	WithFields(fields Fields)
-	WithMap(map[string]interface{})
-	WithStruct(interface{})
+	// With* returns a Tool derivative which includes passed structured values into issued data.
+	WithValue(key string, value interface{}) Tool
+	WithField(fields ...Field) Tool
+	WithMap(map[string]interface{}) Tool
+	WithStruct(interface{}) Tool
+
+	// Fields returns current set of structured values.
 	Fields() Fields
 }
 
-type ToolEntry struct {
-	Key ToolKey
-	Tool Tool
-}
+// Tools is a collection of observability Tool-s.
+type Tools []Tool
 
-type Tools []ToolEntry
-
-func (tools Tools) Get(key ToolKey) Tool {
-	for _, toolEntry := range tools {
-		if toolEntry.Key == key {
-			return toolEntry.Tool
+// Get returns a Tool of a specified type. Returns nil if such Tool is not set.
+func (tools Tools) Get(toolType reflect.Type) Tool {
+	// linear search is faster than map if there are only few entries
+	for _, tool := range tools {
+		// reflect.TypeOf has no overhead when inlined, it just returns the type-field of the interface.
+		// See: https://github.com/xaionaro-go/benchmarks/tree/master/reflect
+		if reflect.TypeOf(tool) == toolType {
+			return tool
 		}
 	}
-	return false
+	return nil
 }
 
+// Observer is a collection of observability tools.
 type Observer struct { ... }
 
-func (obs *Observer) WithValue(key string, value interface{}) *Observer { ... }
-func (obs *Observer) WithFields(fields Fields) *Observer { ... }
-func (obs *Observer) WithMap(map[string]interface{}) *Observer { ... }
-func (obs *Observer) WithStruct(interface{}) *Observer { ... }
+func (obs *Observer) WithValue(key string, value interface{}, props ...FieldProperty) *Observer { ... }
+func (obs *Observer) WithFields(fields ...Fields) *Observer { ... }
+func (obs *Observer) WithMap(map[string]interface{}, props ...FieldProperty) *Observer { ... }
+func (obs *Observer) WithStruct(interface{}, props ...FieldProperty) *Observer { ... }
+
 func (obs *Observer) Fields() Fields { ... }
 func (obs *Observer) WithTools(tools ...Tool) { ... }
 func (obs *Observer) Tools() Tools
